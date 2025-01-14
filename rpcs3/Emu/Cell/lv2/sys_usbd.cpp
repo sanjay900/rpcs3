@@ -191,8 +191,8 @@ void LIBUSB_CALL callback_transfer(struct libusb_transfer* transfer)
 	usbh.transfer_complete(transfer);
 }
 
-
-int LIBUSB_CALL hotplug_callback(libusb_context* /*ctx*/, libusb_device *dev,
+#if LIBUSB_API_VERSION >= 0x01000102
+static int LIBUSB_CALL hotplug_callback(libusb_context* /*ctx*/, libusb_device *dev,
                      libusb_hotplug_event event, void * /*user_data*/) {
   auto& usbh = g_fxo->get<named_thread<usb_handler_thread>>();
   if (LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED == event) {
@@ -203,6 +203,7 @@ int LIBUSB_CALL hotplug_callback(libusb_context* /*ctx*/, libusb_device *dev,
 
   return 0;
 }
+#endif
 
 #if LIBUSB_API_VERSION >= 0x0100010A
 static void LIBUSB_CALL log_cb(libusb_context* /*ctx*/, enum libusb_log_level level, const char* str)
@@ -289,6 +290,10 @@ void usb_handler_thread::check_device(struct libusb_device* dev) {
 		}
 		return false;
 	};
+
+
+	// TODO: can probably steal some logic from https://github.com/RPCS3/rpcs3/pull/9096/files to clean things up
+	// should hopefully make it so we dont need things like `found_skylander`
 
 	// Portals
 	if (check_device(0x1430, 0x0150, 0x0150, "Skylanders Portal"))
@@ -458,7 +463,7 @@ usb_handler_thread::usb_handler_thread()
 		sys_usbd.error("Failed to initialize sys_usbd: %s", libusb_error_name(res));
 		return;
 	}
-
+#if LIBUSB_API_VERSION >= 0x01000102
 	if (libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)) {
 		if (int res = libusb_hotplug_register_callback(ctx, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED |
 			LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT, 0, LIBUSB_HOTPLUG_MATCH_ANY, LIBUSB_HOTPLUG_MATCH_ANY,
@@ -469,6 +474,7 @@ usb_handler_thread::usb_handler_thread()
 			hotplug_supported = true;
 		}
 	}
+#endif
 
 	for (u32 index = 0; index < MAX_SYS_USBD_TRANSFERS; index++)
 	{
