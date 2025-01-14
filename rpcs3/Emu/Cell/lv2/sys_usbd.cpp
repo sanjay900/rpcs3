@@ -97,6 +97,10 @@ public:
 	// Called by the libusb callback function to notify transfer completion
 	void transfer_complete(libusb_transfer* transfer);
 
+	// Called by the libusb hotplug function to validate the device being plugged in
+	void check_device(struct libusb_device* dev);
+	void check_device_removal(struct libusb_device* dev);
+
 	// LDDs handling functions
 	bool add_ldd(std::string_view product, u16 id_vendor, u16 id_product_min, u16 id_product_max);
 	bool remove_ldd(std::string_view product);
@@ -140,6 +144,7 @@ private:
 	u32 get_free_transfer_id();
 
 	void send_message(u32 message, u32 tr_id);
+	void perform_scan(bool force_scan);
 
 private:
 	// Counters for device IDs, transfer IDs and pipe IDs
@@ -163,8 +168,17 @@ private:
 	// List of devices "connected" to the ps3
 	std::array<u8, 7> location{};
 	std::vector<std::shared_ptr<usb_device>> usb_devices;
+	std::unordered_map<uint64_t, std::shared_ptr<usb_device>> known_passthrough_devices;
+	std::unordered_map<uint64_t, std::shared_ptr<usb_device>> current_passthrough_devices;
 
 	libusb_context* ctx = nullptr;
+	libusb_hotplug_callback_handle callback_handle;
+
+	bool found_skylander   = false;
+	bool found_infinity    = false;
+	bool found_dimension   = false;
+	bool found_usj         = false;
+	bool hotplug_supported = false;
 };
 
 void LIBUSB_CALL callback_transfer(struct libusb_transfer* transfer)
@@ -175,6 +189,19 @@ void LIBUSB_CALL callback_transfer(struct libusb_transfer* transfer)
 		return;
 
 	usbh.transfer_complete(transfer);
+}
+
+
+int LIBUSB_CALL hotplug_callback(libusb_context* /*ctx*/, libusb_device *dev,
+                     libusb_hotplug_event event, void * /*user_data*/) {
+  auto& usbh = g_fxo->get<named_thread<usb_handler_thread>>();
+  if (LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED == event) {
+	usbh.check_device(dev);
+  } else if (LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT == event) {
+	usbh.check_device_removal(dev);
+  }
+
+  return 0;
 }
 
 #if LIBUSB_API_VERSION >= 0x0100010A
@@ -205,6 +232,208 @@ static void LIBUSB_CALL log_cb(libusb_context* /*ctx*/, enum libusb_log_level le
 }
 #endif
 
+static uint64_t get_key_for(uint64_t vendor, uint64_t product, uint64_t port, uint64_t address) {
+	return vendor << 32 | product << 16 | port << 8 | address;
+}
+
+void usb_handler_thread::check_device_removal(struct libusb_device* dev) {
+	libusb_device_descriptor desc;
+	if (int res = libusb_get_device_descriptor(dev, &desc); res < 0)
+	{
+		sys_usbd.error("Failed to get device descriptor: %s", libusb_error_name(res));
+		return;
+	}
+	uint8_t port = libusb_get_port_number(dev);
+	uint8_t address = libusb_get_device_address(dev);
+	uint64_t key = get_key_for(desc.idVendor, desc.idProduct, port, address);
+	const auto found = known_passthrough_devices.find(key);
+	if (found != known_passthrough_devices.end())
+	{
+		disconnect_usb_device(found->second, true);
+	}
+}
+
+void usb_handler_thread::check_device(struct libusb_device* dev) {
+	libusb_device_descriptor desc;
+	if (int res = libusb_get_device_descriptor(dev, &desc); res < 0)
+	{
+		sys_usbd.error("Failed to get device descriptor: %s", libusb_error_name(res));
+		return;
+	}
+
+	uint8_t port = libusb_get_port_number(dev);
+	uint8_t address = libusb_get_device_address(dev);
+	uint64_t key = get_key_for(desc.idVendor, desc.idProduct, port, address);
+	const auto found = known_passthrough_devices.find(key);
+	if (found != known_passthrough_devices.end())
+	{
+		current_passthrough_devices[key] = found->second;
+		return;
+	}
+
+
+	auto check_device = [&](const u16 id_vendor, const u16 id_product_min, const u16 id_product_max, const char* s_name) -> bool
+	{
+		if (desc.idVendor == id_vendor && desc.idProduct >= id_product_min && desc.idProduct <= id_product_max)
+		{
+			sys_usbd.success("Found device: %s", s_name);
+			libusb_ref_device(dev);
+			std::shared_ptr<usb_device_passthrough> usb_dev = std::make_shared<usb_device_passthrough>(dev, desc, get_new_location());
+			connect_usb_device(usb_dev, true);
+			uint8_t port = libusb_get_port_number(dev);
+			uint8_t address = libusb_get_device_address(dev);
+			uint64_t key = get_key_for(desc.idVendor, desc.idProduct, port, address);
+			known_passthrough_devices[key] = usb_dev;
+			current_passthrough_devices[key] = usb_dev;
+			return true;
+		}
+		return false;
+	};
+
+	// Portals
+	if (check_device(0x1430, 0x0150, 0x0150, "Skylanders Portal"))
+	{
+		found_skylander = true;
+	}
+
+	if (check_device(0x0E6F, 0x0129, 0x0129, "Disney Infinity Base"))
+	{
+		found_infinity = true;
+	}
+
+	if (check_device(0x0E6F, 0x0241, 0x0241, "Lego Dimensions Portal"))
+	{
+		found_dimension = true;
+	}
+
+	check_device(0x0E6F, 0x200A, 0x200A, "Kamen Rider Summonride Portal");
+
+	// Cameras
+	// check_device(0x1415, 0x0020, 0x2000, "Sony Playstation Eye"); // TODO: verifiy
+
+	// Music devices
+	check_device(0x1415, 0x0000, 0x0000, "SingStar Microphone");
+	// check_device(0x1415, 0x0020, 0x0020, "SingStar Microphone Wireless"); // TODO: verifiy
+	check_device(0x12BA, 0x0100, 0x0100, "Guitar Hero Guitar");
+	check_device(0x12BA, 0x0120, 0x0120, "Guitar Hero Drums");
+	check_device(0x12BA, 0x074B, 0x074B, "Guitar Hero Live Guitar");
+
+	check_device(0x12BA, 0x0140, 0x0140, "DJ Hero Turntable");
+	check_device(0x12BA, 0x0200, 0x020F, "Harmonix Guitar");
+	check_device(0x12BA, 0x0210, 0x021F, "Harmonix Drums");
+	check_device(0x12BA, 0x2330, 0x233F, "Harmonix Keyboard");
+	check_device(0x12BA, 0x2430, 0x243F, "Harmonix Button Guitar");
+	check_device(0x12BA, 0x2530, 0x253F, "Harmonix Real Guitar");
+
+	check_device(0x1BAD, 0x0004, 0x0004, "Harmonix RB1 Guitar - Wii");
+	check_device(0x1BAD, 0x0005, 0x0005, "Harmonix RB1 Drums - Wii");
+	check_device(0x1BAD, 0x3010, 0x301F, "Harmonix RB2 Guitar - Wii");
+	check_device(0x1BAD, 0x3110, 0x313F, "Harmonix RB2 Drums - Wii");
+	check_device(0x1BAD, 0x3330, 0x333F, "Harmonix Keyboard - Wii");
+	check_device(0x1BAD, 0x3430, 0x343F, "Harmonix Button Guitar - Wii");
+	check_device(0x1BAD, 0x3530, 0x353F, "Harmonix Real Guitar - Wii");
+
+	if (desc.idVendor == 0x1209 && desc.idProduct == 0x2882)
+	{
+		sys_usbd.success("Found device: Santroller");
+		// Send the device a specific control transfer so that it jumps to a RPCS3 compatible mode
+		libusb_device_handle* lusb_handle;
+		if (libusb_open(dev, &lusb_handle) == LIBUSB_SUCCESS)
+		{
+#ifdef __linux__
+			libusb_set_auto_detach_kernel_driver(lusb_handle, true);
+			libusb_claim_interface(lusb_handle, 2);
+#endif
+			libusb_control_transfer(lusb_handle, +LIBUSB_ENDPOINT_IN | +LIBUSB_REQUEST_TYPE_CLASS | +LIBUSB_RECIPIENT_INTERFACE, 0x01, 0x03f2, 2, nullptr, 0, 5000);
+			libusb_close(lusb_handle);
+		}
+		else
+		{
+			sys_usbd.error("Unable to open Santroller device, make sure Santroller isn't open in the background.");
+		}
+	}
+
+	// Top Shot Elite controllers
+	check_device(0x12BA, 0x04A0, 0x04A0, "Top Shot Elite");
+	check_device(0x12BA, 0x04A1, 0x04A1, "Top Shot Fearmaster");
+	check_device(0x12BA, 0x04B0, 0x04B0, "Rapala Fishing Rod");
+
+	// GT5 Wheels&co
+	check_device(0x046D, 0xC283, 0xC29B, "lgFF_c283_c29b");
+	check_device(0x044F, 0xB653, 0xB653, "Thrustmaster RGT FFB Pro");
+	check_device(0x044F, 0xB65A, 0xB65A, "Thrustmaster F430");
+	check_device(0x044F, 0xB65D, 0xB65D, "Thrustmaster FFB");
+	check_device(0x044F, 0xB65E, 0xB65E, "Thrustmaster TRS");
+	check_device(0x044F, 0xB660, 0xB660, "Thrustmaster T500 RS Gear Shift");
+
+	// GT6
+	check_device(0x2833, 0x0001, 0x0001, "Oculus");
+	check_device(0x046D, 0xCA03, 0xCA03, "lgFF_ca03_ca03");
+
+	// Buzz controllers
+	check_device(0x054C, 0x1000, 0x1040, "buzzer0");
+	check_device(0x054C, 0x0001, 0x0041, "buzzer1");
+	check_device(0x054C, 0x0042, 0x0042, "buzzer2");
+	check_device(0x046D, 0xC220, 0xC220, "buzzer9");
+
+	// GunCon3 Gun
+	check_device(0x0B9A, 0x0800, 0x0800, "GunCon3");
+
+	// uDraw GameTablet
+	check_device(0x20D6, 0xCB17, 0xCB17, "uDraw GameTablet");
+
+	// DVB-T
+	check_device(0x1415, 0x0003, 0x0003, "PlayTV SCEH-0036");
+
+	// 0x0900: "H050 USJ(C) PCB rev00", 0x0910: "USIO PCB rev00"
+	if (check_device(0x0B9A, 0x0900, 0x0910, "PS3A-USJ"))
+	{
+		found_usj = true;
+	}
+
+	// Densha de GO! controller
+	check_device(0x0AE4, 0x0004, 0x0004, "Densha de GO! Type 2 Controller");
+
+	// EA Active 2 dongle for connecting wristbands & legband
+	check_device(0x21A4, 0xAC27, 0xAC27, "EA Active 2 Dongle");
+
+	// Tony Hawk RIDE Skateboard
+	check_device(0x12BA, 0x0400, 0x0400, "Tony Hawk RIDE Skateboard Controller");
+
+	// PSP in UsbPspCm mode
+	check_device(0x054C, 0x01CB, 0x01CB, "UsbPspcm");
+}
+
+void usb_handler_thread::perform_scan(bool force_scan) {
+	// look if any device which we could be interested in is actually connected
+	libusb_device** list = nullptr;
+	ssize_t ndev         = libusb_get_device_list(ctx, &list);
+
+	if (ndev < 0)
+	{
+		sys_usbd.error("Failed to get device list: %s", libusb_error_name(static_cast<s32>(ndev)));
+		return;
+	}
+
+	current_passthrough_devices.clear();
+
+	for (ssize_t index = 0; index < ndev; index++)
+	{
+		check_device(list[index]);
+	}
+
+	for (const auto& dev : known_passthrough_devices)
+	{
+		if (current_passthrough_devices.count(dev.first) == 0)
+		{
+			disconnect_usb_device(dev.second, true);
+			break;
+		}
+	}
+
+	libusb_free_device_list(list, 1);
+}
+
 usb_handler_thread::usb_handler_thread()
 {
 #if LIBUSB_API_VERSION >= 0x0100010A
@@ -230,164 +459,24 @@ usb_handler_thread::usb_handler_thread()
 		return;
 	}
 
+	if (libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)) {
+		if (int res = libusb_hotplug_register_callback(ctx, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED |
+			LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT, 0, LIBUSB_HOTPLUG_MATCH_ANY, LIBUSB_HOTPLUG_MATCH_ANY,
+			LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL,
+			&callback_handle); res < 0) {
+			sys_usbd.error("Failed to initialize sys_usbd hotplug: %s", libusb_error_name(res));
+		} else {
+			hotplug_supported = true;
+		}
+	}
+
 	for (u32 index = 0; index < MAX_SYS_USBD_TRANSFERS; index++)
 	{
 		transfers[index].transfer    = libusb_alloc_transfer(8);
 		transfers[index].transfer_id = index;
 	}
 
-	// look if any device which we could be interested in is actually connected
-	libusb_device** list = nullptr;
-	ssize_t ndev         = libusb_get_device_list(ctx, &list);
-
-	if (ndev < 0)
-	{
-		sys_usbd.error("Failed to get device list: %s", libusb_error_name(static_cast<s32>(ndev)));
-		return;
-	}
-
-	bool found_skylander = false;
-	bool found_infinity  = false;
-	bool found_dimension = false;	
-	bool found_usj       = false;
-
-	for (ssize_t index = 0; index < ndev; index++)
-	{
-		libusb_device_descriptor desc;
-		if (int res = libusb_get_device_descriptor(list[index], &desc); res < 0)
-		{
-			sys_usbd.error("Failed to get device descriptor: %s", libusb_error_name(res));
-			continue;
-		}
-
-		auto check_device = [&](const u16 id_vendor, const u16 id_product_min, const u16 id_product_max, const char* s_name) -> bool
-		{
-			if (desc.idVendor == id_vendor && desc.idProduct >= id_product_min && desc.idProduct <= id_product_max)
-			{
-				sys_usbd.success("Found device: %s", s_name);
-				libusb_ref_device(list[index]);
-				std::shared_ptr<usb_device_passthrough> usb_dev = std::make_shared<usb_device_passthrough>(list[index], desc, get_new_location());
-				usb_devices.push_back(usb_dev);
-				return true;
-			}
-			return false;
-		};
-
-		// Portals
-		if (check_device(0x1430, 0x0150, 0x0150, "Skylanders Portal"))
-		{
-			found_skylander = true;
-		}
-
-		if (check_device(0x0E6F, 0x0129, 0x0129, "Disney Infinity Base"))
-		{
-			found_infinity = true;
-		}
-
-		if (check_device(0x0E6F, 0x0241, 0x0241, "Lego Dimensions Portal"))
-		{
-			found_dimension = true;
-		}
-
-		check_device(0x0E6F, 0x200A, 0x200A, "Kamen Rider Summonride Portal");
-
-		// Cameras
-		// check_device(0x1415, 0x0020, 0x2000, "Sony Playstation Eye"); // TODO: verifiy
-
-		// Music devices
-		check_device(0x1415, 0x0000, 0x0000, "SingStar Microphone");
-		// check_device(0x1415, 0x0020, 0x0020, "SingStar Microphone Wireless"); // TODO: verifiy
-		check_device(0x12BA, 0x0100, 0x0100, "Guitar Hero Guitar");
-		check_device(0x12BA, 0x0120, 0x0120, "Guitar Hero Drums");
-		check_device(0x12BA, 0x074B, 0x074B, "Guitar Hero Live Guitar");
-
-		check_device(0x12BA, 0x0140, 0x0140, "DJ Hero Turntable");
-		check_device(0x12BA, 0x0200, 0x020F, "Harmonix Guitar");
-		check_device(0x12BA, 0x0210, 0x021F, "Harmonix Drums");
-		check_device(0x12BA, 0x2330, 0x233F, "Harmonix Keyboard");
-		check_device(0x12BA, 0x2430, 0x243F, "Harmonix Button Guitar");
-		check_device(0x12BA, 0x2530, 0x253F, "Harmonix Real Guitar");
-
-		check_device(0x1BAD, 0x0004, 0x0004, "Harmonix RB1 Guitar - Wii");
-		check_device(0x1BAD, 0x0005, 0x0005, "Harmonix RB1 Drums - Wii");
-		check_device(0x1BAD, 0x3010, 0x301F, "Harmonix RB2 Guitar - Wii");
-		check_device(0x1BAD, 0x3110, 0x313F, "Harmonix RB2 Drums - Wii");
-		check_device(0x1BAD, 0x3330, 0x333F, "Harmonix Keyboard - Wii");
-		check_device(0x1BAD, 0x3430, 0x343F, "Harmonix Button Guitar - Wii");
-		check_device(0x1BAD, 0x3530, 0x353F, "Harmonix Real Guitar - Wii");
-
-		if (desc.idVendor == 0x1209 && desc.idProduct == 0x2882)
-		{
-			sys_usbd.success("Found device: Santroller");
-			// Send the device a specific control transfer so that it jumps to a RPCS3 compatible mode
-			libusb_device_handle* lusb_handle;
-			if (libusb_open(list[index], &lusb_handle) == LIBUSB_SUCCESS)
-			{
-#ifdef __linux__
-				libusb_set_auto_detach_kernel_driver(lusb_handle, true);
-				libusb_claim_interface(lusb_handle, 2);
-#endif
-				libusb_control_transfer(lusb_handle, +LIBUSB_ENDPOINT_IN | +LIBUSB_REQUEST_TYPE_CLASS | +LIBUSB_RECIPIENT_INTERFACE, 0x01, 0x03f2, 2, nullptr, 0, 5000);
-				libusb_close(lusb_handle);
-			}
-			else
-			{
-				sys_usbd.error("Unable to open Santroller device, make sure Santroller isn't open in the background.");
-			}
-		}
-
-		// Top Shot Elite controllers
-		check_device(0x12BA, 0x04A0, 0x04A0, "Top Shot Elite");
-		check_device(0x12BA, 0x04A1, 0x04A1, "Top Shot Fearmaster");
-		check_device(0x12BA, 0x04B0, 0x04B0, "Rapala Fishing Rod");
-
-		// GT5 Wheels&co
-		check_device(0x046D, 0xC283, 0xC29B, "lgFF_c283_c29b");
-		check_device(0x044F, 0xB653, 0xB653, "Thrustmaster RGT FFB Pro");
-		check_device(0x044F, 0xB65A, 0xB65A, "Thrustmaster F430");
-		check_device(0x044F, 0xB65D, 0xB65D, "Thrustmaster FFB");
-		check_device(0x044F, 0xB65E, 0xB65E, "Thrustmaster TRS");
-		check_device(0x044F, 0xB660, 0xB660, "Thrustmaster T500 RS Gear Shift");
-
-		// GT6
-		check_device(0x2833, 0x0001, 0x0001, "Oculus");
-		check_device(0x046D, 0xCA03, 0xCA03, "lgFF_ca03_ca03");
-
-		// Buzz controllers
-		check_device(0x054C, 0x1000, 0x1040, "buzzer0");
-		check_device(0x054C, 0x0001, 0x0041, "buzzer1");
-		check_device(0x054C, 0x0042, 0x0042, "buzzer2");
-		check_device(0x046D, 0xC220, 0xC220, "buzzer9");
-
-		// GunCon3 Gun
-		check_device(0x0B9A, 0x0800, 0x0800, "GunCon3");
-
-		// uDraw GameTablet
-		check_device(0x20D6, 0xCB17, 0xCB17, "uDraw GameTablet");
-
-		// DVB-T
-		check_device(0x1415, 0x0003, 0x0003, "PlayTV SCEH-0036");
-
-		// 0x0900: "H050 USJ(C) PCB rev00", 0x0910: "USIO PCB rev00"
-		if (check_device(0x0B9A, 0x0900, 0x0910, "PS3A-USJ"))
-		{
-			found_usj = true;
-		}
-
-		// Densha de GO! controller
-		check_device(0x0AE4, 0x0004, 0x0004, "Densha de GO! Type 2 Controller");
-
-		// EA Active 2 dongle for connecting wristbands & legband
-		check_device(0x21A4, 0xAC27, 0xAC27, "EA Active 2 Dongle");
-
-		// Tony Hawk RIDE Skateboard
-		check_device(0x12BA, 0x0400, 0x0400, "Tony Hawk RIDE Skateboard Controller");
-
-		// PSP in UsbPspCm mode
-		check_device(0x054C, 0x01CB, 0x01CB, "UsbPspcm");
-	}
-
-	libusb_free_device_list(list, 1);
+	perform_scan(true);
 
 	for (int i = 0; i < 8; i++) // Add VFS USB mass storage devices (/dev_usbXXX) to the USB device list
 	{
@@ -532,6 +621,8 @@ usb_handler_thread::~usb_handler_thread()
 			libusb_free_transfer(transfers[index].transfer);
 	}
 
+	libusb_hotplug_deregister_callback(ctx, callback_handle);
+
 	if (ctx)
 		libusb_exit(ctx);
 }
@@ -539,10 +630,17 @@ usb_handler_thread::~usb_handler_thread()
 void usb_handler_thread::operator()()
 {
 	timeval lusb_tv{0, 0};
-
+	u64 usb_hotplug_timeout = 0;
 	while (ctx && thread_ctrl::state() != thread_state::aborting)
 	{
-		// Todo: Hotplug here?
+		if (get_system_time() > usb_hotplug_timeout && !hotplug_supported)
+		{
+			// If we did the hotplug scan each cycle the game performance was significantly degraded, so we only perform this scan
+			// every 4 seconds.  True hotplug events would be better than this scanning, but libusb hotplug isn't supported under
+			// Windows or FreeBSD
+			perform_scan(false);
+			usb_hotplug_timeout = get_system_time() + 4'000'000ull;
+		}
 
 		// Process asynchronous requests that are pending
 		libusb_handle_events_timeout_completed(ctx, &lusb_tv, nullptr);
