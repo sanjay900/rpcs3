@@ -43,6 +43,15 @@ std::string raw_mouse_config::get_button_name(std::string_view value)
 		return std::string(value);
 	}
 
+	if (value.starts_with(key_prefix))
+	{
+		s64 scan_code{};
+		if (try_to_int64(&scan_code, value.substr(key_prefix.size()), s32{smin}, s32{smax}))
+		{
+			return get_key_name(static_cast<s32>(scan_code));
+		}
+	}
+
 	return "";
 }
 
@@ -58,6 +67,22 @@ std::string raw_mouse_config::get_button_name(s32 button_code)
 	return "";
 }
 
+std::string raw_mouse_config::get_key_name(s32 scan_code)
+{
+#ifdef _WIN32
+	TCHAR name_buf[MAX_PATH] {};
+	if (!GetKeyNameTextW(scan_code, name_buf, MAX_PATH))
+	{
+		cfg_log.error("raw_mouse_config: GetKeyNameText failed: %s", fmt::win_error{GetLastError(), nullptr});
+		return {};
+	}
+	return wchar_to_utf8(name_buf);
+#else
+	static_cast<void>(scan_code);
+	return "";
+#endif
+}
+
 raw_mice_config::raw_mice_config()
 {
 	for (u32 i = 0; i < ::size32(players); i++)
@@ -71,7 +96,7 @@ bool raw_mice_config::load()
 	m_mutex.lock();
 
 	bool result = false;
-	const std::string cfg_name = fmt::format("%sconfig/%s.yml", fs::get_config_dir(), cfg_id);
+	const std::string cfg_name = fmt::format("%s%s.yml", fs::get_config_dir(true), cfg_id);
 	cfg_log.notice("Loading %s config: %s", cfg_id, cfg_name);
 
 	from_default();
@@ -98,7 +123,7 @@ void raw_mice_config::save()
 {
 	std::lock_guard lock(m_mutex);
 
-	const std::string cfg_name = fmt::format("%sconfig/%s.yml", fs::get_config_dir(), cfg_id);
+	const std::string cfg_name = fmt::format("%s%s.yml", fs::get_config_dir(true), cfg_id);
 	cfg_log.notice("Saving %s config to '%s'", cfg_id, cfg_name);
 
 	if (!fs::create_path(fs::get_parent_dir(cfg_name)))
