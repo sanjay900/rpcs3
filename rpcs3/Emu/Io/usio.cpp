@@ -127,7 +127,7 @@ usb_device_usio_emu::~usb_device_usio_emu()
 	save_backup();
 }
 
-std::shared_ptr<usb_device> usb_device_usio_emu::make_instance(u32 controller_index, const std::array<u8, 7>& location)
+std::shared_ptr<usb_device> usb_device_usio_emu::make_instance(u32, const std::array<u8, 7>& location)
 {
 	return std::make_shared<usb_device_usio_emu>(location);
 }

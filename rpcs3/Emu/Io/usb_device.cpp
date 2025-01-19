@@ -193,7 +193,7 @@ usb_device_emulated::usb_device_emulated(const UsbDeviceDescriptor& _device, con
 	device = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, _device);
 }
 
-std::shared_ptr<usb_device> usb_device_emulated::make_instance(u32 controller_index, const std::array<u8, 7>& location)
+std::shared_ptr<usb_device> usb_device_emulated::make_instance(u32, const std::array<u8, 7>&)
 {
 	sys_usbd.fatal("[Emulated]: Trying to make instance of [virtual] usb_device_emulated base class");
 	return nullptr;

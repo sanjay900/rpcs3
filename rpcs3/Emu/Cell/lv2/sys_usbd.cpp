@@ -97,11 +97,6 @@ public:
 	// Called by the libusb callback function to notify transfer completion
 	void transfer_complete(libusb_transfer* transfer);
 
-	// Called by the libusb hotplug function to validate the device being plugged in
-	void check_device(struct libusb_device* dev);
-	void check_device_removal(struct libusb_device* dev);
-	void check_emulated_devices();
-
 	// LDDs handling functions
 	bool add_ldd(std::string_view product, u16 id_vendor, u16 id_product_min, u16 id_product_max);
 	bool remove_ldd(std::string_view product);
@@ -138,6 +133,7 @@ public:
 	ppu_thread* sq{};
 
 	static constexpr auto thread_name = "Usb Manager Thread"sv;
+	bool received_hotplug_event = false;
 
 private:
 	// Lock free functions for internal use(ie make sure to lock before using those)
@@ -265,7 +261,6 @@ private:
 	std::array<u8, 7> location{};
 	std::vector<std::shared_ptr<usb_device>> usb_devices;
 	std::unordered_map<uint64_t, std::shared_ptr<usb_device>> known_passthrough_devices;
-	std::set<uint64_t> seen_usb_devices;
 
 	libusb_context* ctx = nullptr;
 	libusb_hotplug_callback_handle callback_handle;
@@ -284,15 +279,10 @@ void LIBUSB_CALL callback_transfer(struct libusb_transfer* transfer)
 }
 
 #if LIBUSB_API_VERSION >= 0x01000102
-static int LIBUSB_CALL hotplug_callback(libusb_context* /*ctx*/, libusb_device *dev,
-                     libusb_hotplug_event event, void * /*user_data*/) {
+static int LIBUSB_CALL hotplug_callback(libusb_context* /*ctx*/, libusb_device * /*dev*/,
+                     libusb_hotplug_event /*event*/, void * /*user_data*/) {
   auto& usbh = g_fxo->get<named_thread<usb_handler_thread>>();
-  if (LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED == event) {
-	usbh.check_device(dev);
-  } else if (LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT == event) {
-	usbh.check_device_removal(dev);
-  }
-
+  usbh.received_hotplug_event = true;
   return 0;
 }
 #endif
@@ -325,100 +315,75 @@ static void LIBUSB_CALL log_cb(libusb_context* /*ctx*/, enum libusb_log_level le
 }
 #endif
 
-static uint64_t make_usb_id(uint64_t vendor, uint64_t product, uint64_t port, uint64_t address) {
-	return vendor << 32 | product << 16 | port << 8 | address;
-}
-
-void usb_handler_thread::check_device_removal(struct libusb_device* dev) {
-	libusb_device_descriptor desc;
-	if (int res = libusb_get_device_descriptor(dev, &desc); res < 0)
-	{
-		sys_usbd.error("Failed to get device descriptor: %s", libusb_error_name(res));
-		return;
-	}
-	uint8_t port = libusb_get_port_number(dev);
-	uint8_t address = libusb_get_device_address(dev);
-	uint64_t usb_id = make_usb_id(desc.idVendor, desc.idProduct, port, address);
-	const auto found = known_passthrough_devices.find(key);
-	if (found != known_passthrough_devices.end())
-	{
-		disconnect_usb_device(found->second, true);
-	}
-}
-
-void usb_handler_thread::check_device(struct libusb_device* dev) {
-	libusb_device_descriptor desc;
-	if (int res = libusb_get_device_descriptor(dev, &desc); res < 0)
-	{
-		sys_usbd.error("Failed to get device descriptor: %s", libusb_error_name(res));
-		return;
-	}
-
-	uint8_t port = libusb_get_port_number(dev);
-	uint8_t address = libusb_get_device_address(dev);
-	uint64_t usb_id = make_usb_id(desc.idVendor, desc.idProduct, port, address);
-	seen_usb_devices.insert(key);
-	if (known_passthrough_devices.count(key) != 0)
-	{
-		return;
-	}
-
-	for (const auto& [id_vendor, id_product_min, id_product_max, s_name, emulate, fn_make_instance] : device_allow_list)
-	{
-		// attach
-		if (desc.idVendor == id_vendor
-			&& desc.idProduct >= id_product_min
-			&& desc.idProduct <= id_product_max)
-		{
-			sys_usbd.success("Found device: %s", std::basic_string(s_name));
-			libusb_ref_device(dev);
-			std::shared_ptr<usb_device_passthrough> usb_dev = std::make_shared<usb_device_passthrough>(dev, desc, get_new_location());
-			connect_usb_device(usb_dev, true);
-			uint8_t port = libusb_get_port_number(dev);
-			uint8_t address = libusb_get_device_address(dev);
-			uint64_t usb_id = make_usb_id(desc.idVendor, desc.idProduct, port, address);
-			known_passthrough_devices[key] = usb_dev;
-		}
-	}
-
-	if (desc.idVendor == 0x1209 && desc.idProduct == 0x2882)
-	{
-		sys_usbd.success("Found device: Santroller");
-		// Send the device a specific control transfer so that it jumps to a RPCS3 compatible mode
-		libusb_device_handle* lusb_handle;
-		if (libusb_open(dev, &lusb_handle) == LIBUSB_SUCCESS)
-		{
-#ifdef __linux__
-			libusb_set_auto_detach_kernel_driver(lusb_handle, true);
-			libusb_claim_interface(lusb_handle, 2);
-#endif
-			libusb_control_transfer(lusb_handle, +LIBUSB_ENDPOINT_IN | +LIBUSB_REQUEST_TYPE_CLASS | +LIBUSB_RECIPIENT_INTERFACE, 0x01, 0x03f2, 2, nullptr, 0, 5000);
-			libusb_close(lusb_handle);
-		}
-		else
-		{
-			sys_usbd.error("Unable to open Santroller device, make sure Santroller isn't open in the background.");
-		}
-	}
-}
-
 void usb_handler_thread::perform_scan(bool force_scan) {
 	// look if any device which we could be interested in is actually connected
 	libusb_device** list = nullptr;
 	ssize_t ndev         = libusb_get_device_list(ctx, &list);
+	std::set<uint64_t> seen_usb_devices;
 
 	if (ndev < 0)
 	{
 		sys_usbd.error("Failed to get device list: %s", libusb_error_name(static_cast<s32>(ndev)));
 		return;
 	}
+
 	// Skip device scan if we have the same amount of devices as last time
 	if (ndev != static_cast<ssize_t>(seen_usb_devices.size()) || force_scan) {
-		seen_usb_devices.clear();
-
+		received_hotplug_event = false;
 		for (ssize_t index = 0; index < ndev; index++)
 		{
-			check_device(list[index]);
+			libusb_device* dev = list[index];
+			libusb_device_descriptor desc;
+			if (int res = libusb_get_device_descriptor(dev, &desc); res < 0)
+			{
+				sys_usbd.error("Failed to get device descriptor: %s", libusb_error_name(res));
+				return;
+			}
+
+			uint8_t port = libusb_get_port_number(dev);
+			uint8_t address = libusb_get_device_address(dev);
+			uint64_t usb_id = desc.idVendor << 32 | desc.idProduct << 16 | port << 8 | address;
+
+			seen_usb_devices.insert(usb_id);
+			if (known_passthrough_devices.count(usb_id) != 0)
+			{
+				return;
+			}
+
+			for (const auto& [id_vendor, id_product_min, id_product_max, s_name, emulate, fn_make_instance] : device_allow_list)
+			{
+				// attach
+				if (desc.idVendor == id_vendor
+					&& desc.idProduct >= id_product_min
+					&& desc.idProduct <= id_product_max)
+				{
+					sys_usbd.success("Found device: %s", std::basic_string(s_name));
+					libusb_ref_device(dev);
+					std::shared_ptr<usb_device_passthrough> usb_dev = std::make_shared<usb_device_passthrough>(dev, desc, get_new_location());
+					connect_usb_device(usb_dev, true);
+					known_passthrough_devices[usb_id] = usb_dev;
+				}
+			}
+
+			if (desc.idVendor == 0x1209 && desc.idProduct == 0x2882)
+			{
+				sys_usbd.success("Found device: Santroller");
+				// Send the device a specific control transfer so that it jumps to a RPCS3 compatible mode
+				libusb_device_handle* lusb_handle;
+				if (libusb_open(dev, &lusb_handle) == LIBUSB_SUCCESS)
+				{
+		#ifdef __linux__
+					libusb_set_auto_detach_kernel_driver(lusb_handle, true);
+					libusb_claim_interface(lusb_handle, 2);
+		#endif
+					libusb_control_transfer(lusb_handle, +LIBUSB_ENDPOINT_IN | +LIBUSB_REQUEST_TYPE_CLASS | +LIBUSB_RECIPIENT_INTERFACE, 0x01, 0x03f2, 2, nullptr, 0, 5000);
+					libusb_close(lusb_handle);
+				}
+				else
+				{
+					sys_usbd.error("Unable to open Santroller device, make sure Santroller isn't open in the background.");
+				}
+			}
 		}
 
 		for (auto it = known_passthrough_devices.begin(); it != known_passthrough_devices.end();)
@@ -615,11 +580,11 @@ void usb_handler_thread::operator()()
 	u64 usb_hotplug_timeout = 0;
 	while (ctx && thread_ctrl::state() != thread_state::aborting)
 	{
-		if (get_system_time() > usb_hotplug_timeout && !hotplug_supported)
+		if ((get_system_time() > usb_hotplug_timeout && !hotplug_supported) || received_hotplug_event)
 		{
 			// If we did the hotplug scan each cycle the game performance was significantly degraded, so we only perform this scan
-			// every 4 seconds.  True hotplug events would be better than this scanning, but libusb hotplug isn't supported under
-			// Windows or FreeBSD
+			// every 4 seconds.  True hotplug events are better than scanning, and on platforms where true hotplug events are
+			// supported, they will be used instead.
 			perform_scan(false);
 			usb_hotplug_timeout = get_system_time() + 4'000'000ull;
 		}
