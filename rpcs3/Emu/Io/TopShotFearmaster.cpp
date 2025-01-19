@@ -115,7 +115,7 @@ enum
 	Dpad_None = 0x0f
 };
 
-usb_device_topshotfearmaster::usb_device_topshotfearmaster(u32 controller_index, const std::array<u8, 7>& location)
+usb_device_topshotfearmaster_emu::usb_device_topshotfearmaster_emu(u32 controller_index, const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 	, m_controller_index(controller_index)
 	, m_mode(0)
@@ -175,11 +175,11 @@ usb_device_topshotfearmaster::usb_device_topshotfearmaster(u32 controller_index,
 	add_string("Dangerous Hunts for Playstation (R) 3");
 }
 
-usb_device_topshotfearmaster::~usb_device_topshotfearmaster()
+usb_device_topshotfearmaster_emu::~usb_device_topshotfearmaster_emu()
 {
 }
 
-void usb_device_topshotfearmaster::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+void usb_device_topshotfearmaster_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake            = true;
 	transfer->expected_count  = buf_size;
@@ -269,7 +269,7 @@ static void prepare_data(const TopShotFearmaster_data* ts, u8* data)
 	topshotfearmaster_log.trace("interrupt_transfer: %s", fmt::buf_to_hexstring(data, sizeof(TopShotFearmaster_data)));
 }
 
-void usb_device_topshotfearmaster::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
+void usb_device_topshotfearmaster_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
 {
 	ensure(buf_size >= sizeof(TopShotFearmaster_data));
 

@@ -100,6 +100,7 @@ public:
 	// Called by the libusb hotplug function to validate the device being plugged in
 	void check_device(struct libusb_device* dev);
 	void check_device_removal(struct libusb_device* dev);
+	void check_emulated_devices();
 
 	// LDDs handling functions
 	bool add_ldd(std::string_view product, u16 id_vendor, u16 id_product_min, u16 id_product_max);
@@ -155,6 +156,101 @@ private:
 	// List of device drivers
 	std::unordered_map<std::string, UsbLdd, fmt::string_hash, std::equal_to<>> ldds;
 
+	const std::set<std::tuple<u16, u16, u16, std::string_view, u16(*)(void), std::shared_ptr<usb_device>(*)(u32, const std::array<u8, 7>&)>> device_allow_list
+	{
+		// Portals
+		{0x1430, 0x0150, 0x0150, "Skylanders Portal", &usb_device_skylander_emu::get_num_emu_devices, &usb_device_skylander_emu::make_instance},
+		{0x0E6F, 0x0129, 0x0129, "Disney Infinity Base", &usb_device_infinity_emu::get_num_emu_devices, &usb_device_infinity_emu::make_instance},
+		{0x0E6F, 0x0241, 0x0241, "Lego Dimensions Portal", &usb_device_dimensions_emu::get_num_emu_devices, &usb_device_dimensions_emu::make_instance},
+		{0x0E6F, 0x200A, 0x200A, "Kamen Rider Summonride Portal", nullptr, nullptr},
+
+		// Cameras
+		// {0x1415, 0x0020, 0x2000, "Sony Playstation Eye", nullptr, nullptr}, // TODO: verifiy
+
+		// Music devices
+		{0x1415, 0x0000, 0x0000, "Singstar Microphone", nullptr, nullptr},
+		// {0x1415, 0x0020, 0x0020, "SingStar Microphone Wireless", nullptr, nullptr}, // TODO: verifiy
+
+		{0x12BA, 0x00FF, 0x00FF, "Rocksmith Guitar Adapter", nullptr, nullptr},
+		{0x12BA, 0x0100, 0x0100, "Guitar Hero Guitar", nullptr, nullptr},
+		{0x12BA, 0x0120, 0x0120, "Guitar Hero Drums", nullptr, nullptr},
+		{0x12BA, 0x074B, 0x074B, "Guitar Hero Live Guitar", &usb_device_ghltar_emu::get_num_emu_devices, &usb_device_ghltar_emu::make_instance},
+
+		{0x12BA, 0x0140, 0x0140, "DJ Hero Turntable", &usb_device_turntable_emu::get_num_emu_devices, &usb_device_turntable_emu::make_instance},
+		{0x12BA, 0x0200, 0x020F, "Harmonix Guitar", nullptr, nullptr},
+		{0x12BA, 0x0210, 0x021F, "Harmonix Drums", nullptr, nullptr},
+		{0x12BA, 0x2330, 0x233F, "Harmonix Keyboard", nullptr, nullptr},
+		{0x12BA, 0x2430, 0x243F, "Harmonix Button Guitar", nullptr, nullptr},
+		{0x12BA, 0x2530, 0x253F, "Harmonix Real Guitar", nullptr, nullptr},
+
+		{0x1BAD, 0x0004, 0x0004, "Harmonix RB1 Guitar - Wii", nullptr, nullptr},
+		{0x1BAD, 0x0005, 0x0005, "Harmonix RB1 Drums - Wii", nullptr, nullptr},
+		{0x1BAD, 0x3010, 0x301F, "Harmonix RB2 Guitar - Wii", nullptr, nullptr},
+		{0x1BAD, 0x3110, 0x313F, "Harmonix RB2 Drums - Wii", nullptr, nullptr},
+		{0x1BAD, 0x3330, 0x333F, "Harmonix Keyboard - Wii", nullptr, nullptr},
+		{0x1BAD, 0x3430, 0x343F, "Harmonix Button Guitar - Wii", nullptr, nullptr},
+		{0x1BAD, 0x3530, 0x353F, "Harmonix Real Guitar - Wii", nullptr, nullptr},
+
+		//Top Shot Elite controllers
+		{0x12BA, 0x04A0, 0x04A0, "Top Shot Elite", nullptr, nullptr},
+		{0x12BA, 0x04A1, 0x04A1, "Top Shot Fearmaster", nullptr, nullptr},
+		{0x12BA, 0x04B0, 0x04B0, "Rapala Fishing Rod", nullptr, nullptr},
+
+
+		// GT5 Wheels&co
+		{0x046D, 0xC283, 0xC29B, "lgFF_c283_c29b", nullptr, nullptr},
+		{0x044F, 0xB653, 0xB653, "Thrustmaster RGT FFB Pro", nullptr, nullptr},
+		{0x044F, 0xB65A, 0xB65A, "Thrustmaster F430", nullptr, nullptr},
+		{0x044F, 0xB65D, 0xB65D, "Thrustmaster FFB", nullptr, nullptr},
+		{0x044F, 0xB65E, 0xB65E, "Thrustmaster TRS", nullptr, nullptr},
+		{0x044F, 0xB660, 0xB660, "Thrustmaster T500 RS Gear Shift", nullptr, nullptr},
+
+		// GT6
+		{0x2833, 0x0001, 0x0001, "Oculus", nullptr, nullptr},
+		{0x046D, 0xCA03, 0xCA03, "lgFF_ca03_ca03", nullptr, nullptr},
+
+		// Buzz controllers
+		{0x054C, 0x1000, 0x1040, "buzzer0", &usb_device_buzz_emu::get_num_emu_devices, &usb_device_buzz_emu::make_instance},
+		{0x054C, 0x0001, 0x0041, "buzzer1", &usb_device_buzz_emu::get_num_emu_devices, &usb_device_buzz_emu::make_instance},
+		{0x054C, 0x0042, 0x0042, "buzzer2", &usb_device_buzz_emu::get_num_emu_devices, &usb_device_buzz_emu::make_instance},
+		{0x046D, 0xC220, 0xC220, "buzzer9", &usb_device_buzz_emu::get_num_emu_devices, &usb_device_buzz_emu::make_instance},
+
+		// GCon3 Gun
+		{0x0B9A, 0x0800, 0x0800, "guncon3", nullptr, nullptr},
+
+		// uDraw GameTablet
+		{0x20D6, 0xCB17, 0xCB17, "uDraw GameTablet", nullptr, nullptr},
+
+		// DVB-T
+		{0x1415, 0x0003, 0x0003, "PlayTV SCEH-0036", nullptr, nullptr},
+
+		// PSP Devices
+		{0x054C, 0x01C8, 0x01C8, "PSP Type A", nullptr, nullptr},
+		{0x054C, 0x01C9, 0x01C9, "PSP Type B", nullptr, nullptr},
+		{0x054C, 0x01CA, 0x01CA, "PSP Type C", nullptr, nullptr},
+		{0x054C, 0x01CB, 0x01CB, "PSP Type D", nullptr, nullptr},
+		{0x054C, 0x02D2, 0x02D2, "PSP Slim", nullptr, nullptr},
+
+		// 0x0900: "H050 USJ(C) PCB rev00", 0x0910: "USIO PCB rev00"
+		{0x0B9A, 0x0900, 0x0910, "PS3A-USJ", &usb_device_usio_emu::get_num_emu_devices, &usb_device_usio_emu::make_instance},
+
+		// Densha de GO! controller
+		{0x0AE4, 0x0004, 0x0004, "Densha de GO! Type 2 Controller", nullptr, nullptr},
+
+		// EA Active 2 dongle for connecting wristbands & legband
+		{0x21A4, 0xAC27, 0xAC27, "EA Active 2 Dongle", nullptr, nullptr},
+
+		// Tony Hawk RIDE Skateboard
+		{0x12BA, 0x0400, 0x0400, "Tony Hawk RIDE Skateboard Controller", nullptr, nullptr},
+
+		// PSP in UsbPspCm mode
+		{0x054C, 0x01CB, 0x01CB, "UsbPspcm", nullptr, nullptr},
+
+		// Sony Stereo Headsets
+		{0x12BA, 0x0032, 0x0032, "Wireless Stereo Headset", nullptr, nullptr},
+		{0x12BA, 0x0042, 0x0042, "Wireless Stereo Headset", nullptr, nullptr},
+	};
+
 	// List of pipes
 	std::map<u32, UsbPipe> open_pipes;
 	// Transfers infos
@@ -169,15 +265,11 @@ private:
 	std::array<u8, 7> location{};
 	std::vector<std::shared_ptr<usb_device>> usb_devices;
 	std::unordered_map<uint64_t, std::shared_ptr<usb_device>> known_passthrough_devices;
-	std::unordered_map<uint64_t, std::shared_ptr<usb_device>> current_passthrough_devices;
+	std::set<uint64_t> seen_usb_devices;
 
 	libusb_context* ctx = nullptr;
 	libusb_hotplug_callback_handle callback_handle;
 
-	bool found_skylander   = false;
-	bool found_infinity    = false;
-	bool found_dimension   = false;
-	bool found_usj         = false;
 	bool hotplug_supported = false;
 };
 
@@ -233,7 +325,7 @@ static void LIBUSB_CALL log_cb(libusb_context* /*ctx*/, enum libusb_log_level le
 }
 #endif
 
-static uint64_t get_key_for(uint64_t vendor, uint64_t product, uint64_t port, uint64_t address) {
+static uint64_t make_usb_key(uint64_t vendor, uint64_t product, uint64_t port, uint64_t address) {
 	return vendor << 32 | product << 16 | port << 8 | address;
 }
 
@@ -246,7 +338,7 @@ void usb_handler_thread::check_device_removal(struct libusb_device* dev) {
 	}
 	uint8_t port = libusb_get_port_number(dev);
 	uint8_t address = libusb_get_device_address(dev);
-	uint64_t key = get_key_for(desc.idVendor, desc.idProduct, port, address);
+	uint64_t key = make_usb_key(desc.idVendor, desc.idProduct, port, address);
 	const auto found = known_passthrough_devices.find(key);
 	if (found != known_passthrough_devices.end())
 	{
@@ -264,79 +356,30 @@ void usb_handler_thread::check_device(struct libusb_device* dev) {
 
 	uint8_t port = libusb_get_port_number(dev);
 	uint8_t address = libusb_get_device_address(dev);
-	uint64_t key = get_key_for(desc.idVendor, desc.idProduct, port, address);
-	const auto found = known_passthrough_devices.find(key);
-	if (found != known_passthrough_devices.end())
+	uint64_t key = make_usb_key(desc.idVendor, desc.idProduct, port, address);
+	seen_usb_devices.insert(key);
+	if (known_passthrough_devices.count(key) != 0)
 	{
-		current_passthrough_devices[key] = found->second;
 		return;
 	}
 
-
-	auto check_device = [&](const u16 id_vendor, const u16 id_product_min, const u16 id_product_max, const char* s_name) -> bool
+	for (const auto& [id_vendor, id_product_min, id_product_max, s_name, emulate, fn_make_instance] : device_allow_list)
 	{
-		if (desc.idVendor == id_vendor && desc.idProduct >= id_product_min && desc.idProduct <= id_product_max)
+		// attach
+		if (desc.idVendor == id_vendor
+			&& desc.idProduct >= id_product_min
+			&& desc.idProduct <= id_product_max)
 		{
-			sys_usbd.success("Found device: %s", s_name);
+			sys_usbd.success("Found device: %s", std::basic_string(s_name));
 			libusb_ref_device(dev);
 			std::shared_ptr<usb_device_passthrough> usb_dev = std::make_shared<usb_device_passthrough>(dev, desc, get_new_location());
 			connect_usb_device(usb_dev, true);
 			uint8_t port = libusb_get_port_number(dev);
 			uint8_t address = libusb_get_device_address(dev);
-			uint64_t key = get_key_for(desc.idVendor, desc.idProduct, port, address);
+			uint64_t key = make_usb_key(desc.idVendor, desc.idProduct, port, address);
 			known_passthrough_devices[key] = usb_dev;
-			current_passthrough_devices[key] = usb_dev;
-			return true;
 		}
-		return false;
-	};
-
-
-	// TODO: can probably steal some logic from https://github.com/RPCS3/rpcs3/pull/9096/files to clean things up
-	// should hopefully make it so we dont need things like `found_skylander`
-
-	// Portals
-	if (check_device(0x1430, 0x0150, 0x0150, "Skylanders Portal"))
-	{
-		found_skylander = true;
 	}
-
-	if (check_device(0x0E6F, 0x0129, 0x0129, "Disney Infinity Base"))
-	{
-		found_infinity = true;
-	}
-
-	if (check_device(0x0E6F, 0x0241, 0x0241, "Lego Dimensions Portal"))
-	{
-		found_dimension = true;
-	}
-
-	check_device(0x0E6F, 0x200A, 0x200A, "Kamen Rider Summonride Portal");
-
-	// Cameras
-	// check_device(0x1415, 0x0020, 0x2000, "Sony Playstation Eye"); // TODO: verifiy
-
-	// Music devices
-	check_device(0x1415, 0x0000, 0x0000, "SingStar Microphone");
-	// check_device(0x1415, 0x0020, 0x0020, "SingStar Microphone Wireless"); // TODO: verifiy
-	check_device(0x12BA, 0x0100, 0x0100, "Guitar Hero Guitar");
-	check_device(0x12BA, 0x0120, 0x0120, "Guitar Hero Drums");
-	check_device(0x12BA, 0x074B, 0x074B, "Guitar Hero Live Guitar");
-
-	check_device(0x12BA, 0x0140, 0x0140, "DJ Hero Turntable");
-	check_device(0x12BA, 0x0200, 0x020F, "Harmonix Guitar");
-	check_device(0x12BA, 0x0210, 0x021F, "Harmonix Drums");
-	check_device(0x12BA, 0x2330, 0x233F, "Harmonix Keyboard");
-	check_device(0x12BA, 0x2430, 0x243F, "Harmonix Button Guitar");
-	check_device(0x12BA, 0x2530, 0x253F, "Harmonix Real Guitar");
-
-	check_device(0x1BAD, 0x0004, 0x0004, "Harmonix RB1 Guitar - Wii");
-	check_device(0x1BAD, 0x0005, 0x0005, "Harmonix RB1 Drums - Wii");
-	check_device(0x1BAD, 0x3010, 0x301F, "Harmonix RB2 Guitar - Wii");
-	check_device(0x1BAD, 0x3110, 0x313F, "Harmonix RB2 Drums - Wii");
-	check_device(0x1BAD, 0x3330, 0x333F, "Harmonix Keyboard - Wii");
-	check_device(0x1BAD, 0x3430, 0x343F, "Harmonix Button Guitar - Wii");
-	check_device(0x1BAD, 0x3530, 0x353F, "Harmonix Real Guitar - Wii");
 
 	if (desc.idVendor == 0x1209 && desc.idProduct == 0x2882)
 	{
@@ -357,56 +400,6 @@ void usb_handler_thread::check_device(struct libusb_device* dev) {
 			sys_usbd.error("Unable to open Santroller device, make sure Santroller isn't open in the background.");
 		}
 	}
-
-	// Top Shot Elite controllers
-	check_device(0x12BA, 0x04A0, 0x04A0, "Top Shot Elite");
-	check_device(0x12BA, 0x04A1, 0x04A1, "Top Shot Fearmaster");
-	check_device(0x12BA, 0x04B0, 0x04B0, "Rapala Fishing Rod");
-
-	// GT5 Wheels&co
-	check_device(0x046D, 0xC283, 0xC29B, "lgFF_c283_c29b");
-	check_device(0x044F, 0xB653, 0xB653, "Thrustmaster RGT FFB Pro");
-	check_device(0x044F, 0xB65A, 0xB65A, "Thrustmaster F430");
-	check_device(0x044F, 0xB65D, 0xB65D, "Thrustmaster FFB");
-	check_device(0x044F, 0xB65E, 0xB65E, "Thrustmaster TRS");
-	check_device(0x044F, 0xB660, 0xB660, "Thrustmaster T500 RS Gear Shift");
-
-	// GT6
-	check_device(0x2833, 0x0001, 0x0001, "Oculus");
-	check_device(0x046D, 0xCA03, 0xCA03, "lgFF_ca03_ca03");
-
-	// Buzz controllers
-	check_device(0x054C, 0x1000, 0x1040, "buzzer0");
-	check_device(0x054C, 0x0001, 0x0041, "buzzer1");
-	check_device(0x054C, 0x0042, 0x0042, "buzzer2");
-	check_device(0x046D, 0xC220, 0xC220, "buzzer9");
-
-	// GunCon3 Gun
-	check_device(0x0B9A, 0x0800, 0x0800, "GunCon3");
-
-	// uDraw GameTablet
-	check_device(0x20D6, 0xCB17, 0xCB17, "uDraw GameTablet");
-
-	// DVB-T
-	check_device(0x1415, 0x0003, 0x0003, "PlayTV SCEH-0036");
-
-	// 0x0900: "H050 USJ(C) PCB rev00", 0x0910: "USIO PCB rev00"
-	if (check_device(0x0B9A, 0x0900, 0x0910, "PS3A-USJ"))
-	{
-		found_usj = true;
-	}
-
-	// Densha de GO! controller
-	check_device(0x0AE4, 0x0004, 0x0004, "Densha de GO! Type 2 Controller");
-
-	// EA Active 2 dongle for connecting wristbands & legband
-	check_device(0x21A4, 0xAC27, 0xAC27, "EA Active 2 Dongle");
-
-	// Tony Hawk RIDE Skateboard
-	check_device(0x12BA, 0x0400, 0x0400, "Tony Hawk RIDE Skateboard Controller");
-
-	// PSP in UsbPspCm mode
-	check_device(0x054C, 0x01CB, 0x01CB, "UsbPspcm");
 }
 
 void usb_handler_thread::perform_scan(bool force_scan) {
@@ -419,23 +412,29 @@ void usb_handler_thread::perform_scan(bool force_scan) {
 		sys_usbd.error("Failed to get device list: %s", libusb_error_name(static_cast<s32>(ndev)));
 		return;
 	}
+	// Skip device scan if we have the same amount of devices as last time
+	if (ndev != static_cast<ssize_t>(seen_usb_devices.size()) || force_scan) {
+		seen_usb_devices.clear();
 
-	current_passthrough_devices.clear();
-
-	for (ssize_t index = 0; index < ndev; index++)
-	{
-		check_device(list[index]);
-	}
-
-	for (const auto& dev : known_passthrough_devices)
-	{
-		if (current_passthrough_devices.count(dev.first) == 0)
+		for (ssize_t index = 0; index < ndev; index++)
 		{
-			disconnect_usb_device(dev.second, true);
-			break;
+			check_device(list[index]);
+		}
+
+		for (auto it = known_passthrough_devices.begin(); it != known_passthrough_devices.end();)
+		{
+			auto dev = *it;
+			// If a device is no longer visible, disconnect it
+			if (seen_usb_devices.contains(dev.first))
+			{
+				++it;
+			} else {
+				disconnect_usb_device(dev.second, false);
+				it = known_passthrough_devices.erase(it);
+			}
+
 		}
 	}
-
 	libusb_free_device_list(list, 1);
 }
 
@@ -482,44 +481,80 @@ usb_handler_thread::usb_handler_thread()
 		transfers[index].transfer_id = index;
 	}
 
+	if (!g_cfg_usio.load())
+	{
+		sys_usbd.notice("Could not load usio config. Using defaults.");
+	}
+
+	sys_usbd.notice("USIO config=\n", g_cfg_usio.to_string());
+
+	if (g_cfg.io.ghltar == ghltar_handler::one_controller || g_cfg.io.ghltar == ghltar_handler::two_controllers)
+	{
+		if (!g_cfg_ghltar.load())
+		{
+			sys_usbd.notice("Could not load ghltar config. Using defaults.");
+		}
+
+		sys_usbd.notice("Ghltar config=\n", g_cfg_ghltar.to_string());
+	}
+
+	if (g_cfg.io.turntable == turntable_handler::one_controller || g_cfg.io.turntable == turntable_handler::two_controllers)
+	{
+		if (!g_cfg_turntable.load())
+		{
+			sys_usbd.notice("Could not load turntable config. Using defaults.");
+		}
+
+		sys_usbd.notice("Turntable config=\n", g_cfg_turntable.to_string());
+	}
+
+	if (g_cfg.io.buzz == buzz_handler::one_controller || g_cfg.io.buzz == buzz_handler::two_controllers)
+	{
+		if (!g_cfg_buzz.load())
+		{
+			sys_usbd.notice("Could not load buzz config. Using defaults.");
+		}
+
+		sys_usbd.notice("Buzz config=\n", g_cfg_buzz.to_string());
+	}
+
 	perform_scan(true);
+
+	// Set up emulated devices for any devices that are not already being passed through
+	std::map<std::tuple<u16, u16, u16, std::string_view, u16(*)(void), std::shared_ptr<usb_device>(*)(u32, const std::array<u8, 7>&)>, int> emulate_device_check;
+	for (const auto& dev : usb_devices)
+	{
+		for (const auto& data : device_allow_list) {
+			const auto& [id_vendor, id_product_min, id_product_max, s_name, max_device_count, fn_make_instance] = data;
+			u16 idVendor = dev->device._device.idVendor;
+			u16 idProduct = dev->device._device.idProduct;
+			if (max_device_count != nullptr && (idVendor == id_vendor && idProduct >= id_product_min && idProduct <= id_product_max))
+			{
+				emulate_device_check[data]++;
+			}
+		}
+	}
+
+	for (const auto& [data, count] : emulate_device_check)
+	{
+		const auto& [id_vendor, id_product_min, id_product_max, s_name, max_device_count, fn_make_instance] = data;
+		if (max_device_count && fn_make_instance)
+		{
+			if (max_device_count() > count) {
+				for (int i = count; i < max_device_count(); i++) {
+					sys_usbd.success("Emulating device: %s (%d)", std::basic_string(s_name), i);
+					auto usb_dev = fn_make_instance(i, get_new_location());
+					connect_usb_device(usb_dev, true);
+				}
+			}
+		}
+	}
 
 	for (int i = 0; i < 8; i++) // Add VFS USB mass storage devices (/dev_usbXXX) to the USB device list
 	{
 		const auto usb_info = g_cfg_vfs.get_device(g_cfg_vfs.dev_usb, fmt::format("/dev_usb%03d", i));
 		if (fs::is_dir(usb_info.path))
-			usb_devices.push_back(std::make_shared<usb_device_vfs>(usb_info, get_new_location()));
-	}
-
-	if (!found_skylander)
-	{
-		sys_usbd.notice("Adding emulated skylander");
-		usb_devices.push_back(std::make_shared<usb_device_skylander>(get_new_location()));
-	}
-
-	if (!found_infinity)
-	{
-		sys_usbd.notice("Adding emulated infinity base");
-		usb_devices.push_back(std::make_shared<usb_device_infinity>(get_new_location()));
-	}
-
-	if (!found_dimension)
-	{
-		sys_usbd.notice("Adding emulated dimension toypad");
-		usb_devices.push_back(std::make_shared<usb_device_dimensions>(get_new_location()));
-	}
-
-	if (!found_usj)
-	{
-		if (!g_cfg_usio.load())
-		{
-			sys_usbd.notice("Could not load usio config. Using defaults.");
-		}
-
-		sys_usbd.notice("Adding emulated USIO");
-		usb_devices.push_back(std::make_shared<usb_device_usio>(get_new_location()));
-
-		sys_usbd.notice("USIO config=\n", g_cfg_usio.to_string());
+			usb_devices.push_back(std::make_shared<usb_device_vfs_emu>(usb_info, get_new_location()));
 	}
 
 	const std::vector<std::string> devices_list = fmt::split(g_cfg.io.midi_devices.to_string(), { "@@@" });
@@ -533,13 +568,13 @@ usb_handler_thread::usb_handler_thread()
 		switch (device.type)
 		{
 		case midi_device_type::guitar:
-			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_guitar>(get_new_location(), device.name, false));
+			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_guitar_emu>(get_new_location(), device.name, false));
 			break;
 		case midi_device_type::guitar_22fret:
-			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_guitar>(get_new_location(), device.name, true));
+			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_guitar_emu>(get_new_location(), device.name, true));
 			break;
 		case midi_device_type::keyboard:
-			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_keyboard>(get_new_location(), device.name));
+			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_keyboard_emu>(get_new_location(), device.name));
 			break;
 		case midi_device_type::drums:
 			if (!g_cfg_rb3drums.load())
@@ -547,70 +582,11 @@ usb_handler_thread::usb_handler_thread()
 				sys_usbd.notice("Could not load rb3drums config. Using defaults.");
 			}
 
-			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_drums>(get_new_location(), device.name));
+			usb_devices.push_back(std::make_shared<usb_device_rb3_midi_drums_emu>(get_new_location(), device.name));
 
 			sys_usbd.notice("RB3 drums config=\n", g_cfg_rb3drums.to_string());
 			break;
 		}
-	}
-
-	if (g_cfg.io.ghltar == ghltar_handler::one_controller || g_cfg.io.ghltar == ghltar_handler::two_controllers)
-	{
-		if (!g_cfg_ghltar.load())
-		{
-			sys_usbd.notice("Could not load ghltar config. Using defaults.");
-		}
-
-		sys_usbd.notice("Adding emulated GHLtar (1 player)");
-		usb_devices.push_back(std::make_shared<usb_device_ghltar>(0, get_new_location()));
-
-		if (g_cfg.io.ghltar == ghltar_handler::two_controllers)
-		{
-			sys_usbd.notice("Adding emulated GHLtar (2 players)");
-			usb_devices.push_back(std::make_shared<usb_device_ghltar>(1, get_new_location()));
-		}
-
-		sys_usbd.notice("Ghltar config=\n", g_cfg_ghltar.to_string());
-	}
-
-	if (g_cfg.io.turntable == turntable_handler::one_controller || g_cfg.io.turntable == turntable_handler::two_controllers)
-	{
-		if (!g_cfg_turntable.load())
-		{
-			sys_usbd.notice("Could not load turntable config. Using defaults.");
-		}
-
-		sys_usbd.notice("Adding emulated turntable (1 player)");
-		usb_devices.push_back(std::make_shared<usb_device_turntable>(0, get_new_location()));
-
-		if (g_cfg.io.turntable == turntable_handler::two_controllers)
-		{
-			sys_usbd.notice("Adding emulated turntable (2 players)");
-			usb_devices.push_back(std::make_shared<usb_device_turntable>(1, get_new_location()));
-		}
-
-		sys_usbd.notice("Turntable config=\n", g_cfg_turntable.to_string());
-	}
-
-	if (g_cfg.io.buzz == buzz_handler::one_controller || g_cfg.io.buzz == buzz_handler::two_controllers)
-	{
-		if (!g_cfg_buzz.load())
-		{
-			sys_usbd.notice("Could not load buzz config. Using defaults.");
-		}
-
-		sys_usbd.notice("Adding emulated Buzz! buzzer (1-4 players)");
-		usb_devices.push_back(std::make_shared<usb_device_buzz>(0, 3, get_new_location()));
-
-		if (g_cfg.io.buzz == buzz_handler::two_controllers)
-		{
-			// The current buzz emulation piggybacks on the pad input.
-			// Since there can only be 7 pads connected on a PS3 the 8th player is currently not supported
-			sys_usbd.notice("Adding emulated Buzz! buzzer (5-7 players)");
-			usb_devices.push_back(std::make_shared<usb_device_buzz>(4, 6, get_new_location()));
-		}
-
-		sys_usbd.notice("Buzz config=\n", g_cfg_buzz.to_string());
 	}
 }
 
@@ -1000,7 +976,7 @@ void connect_usb_controller(u8 index, input::product_type type)
 			}
 
 			sys_usbd.success("Adding emulated GunCon3 (controller %d)", index);
-			std::shared_ptr<usb_device> dev = std::make_shared<usb_device_guncon3>(index, usbh->get_new_location());
+			std::shared_ptr<usb_device> dev = std::make_shared<usb_device_guncon3_emu>(index, usbh->get_new_location());
 			usbh->connect_usb_device(dev, true);
 			usbh->pad_to_usb.emplace(index, std::pair(type, dev));
 
@@ -1015,7 +991,7 @@ void connect_usb_controller(u8 index, input::product_type type)
 			}
 
 			sys_usbd.success("Adding emulated Top Shot Elite (controller %d)", index);
-			std::shared_ptr<usb_device> dev = std::make_shared<usb_device_topshotelite>(index, usbh->get_new_location());
+			std::shared_ptr<usb_device> dev = std::make_shared<usb_device_topshotelite_emu>(index, usbh->get_new_location());
 			usbh->connect_usb_device(dev, true);
 			usbh->pad_to_usb.emplace(index, std::pair(type, dev));
 
@@ -1030,7 +1006,7 @@ void connect_usb_controller(u8 index, input::product_type type)
 			}
 
 			sys_usbd.success("Adding emulated Top Shot Fearmaster (controller %d)", index);
-			std::shared_ptr<usb_device> dev = std::make_shared<usb_device_topshotfearmaster>(index, usbh->get_new_location());
+			std::shared_ptr<usb_device> dev = std::make_shared<usb_device_topshotfearmaster_emu>(index, usbh->get_new_location());
 			usbh->connect_usb_device(dev, true);
 			usbh->pad_to_usb.emplace(index, std::pair(type, dev));
 

@@ -65,15 +65,19 @@ private:
 
 extern dimensions_toypad g_dimensionstoypad;
 
-class usb_device_dimensions : public usb_device_emulated
+class usb_device_dimensions_emu : public usb_device_emulated
 {
 public:
-	usb_device_dimensions(const std::array<u8, 7>& location);
-	~usb_device_dimensions();
+	usb_device_dimensions_emu(const std::array<u8, 7>& location);
+	~usb_device_dimensions_emu();
+
+	static std::shared_ptr<usb_device> make_instance(u32 controller_index, const std::array<u8, 7>& location);
 
 	void control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer) override;
 	void interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer) override;
 	void isochronous_transfer(UsbTransfer* transfer) override;
+
+	static u16 get_num_emu_devices();
 
 protected:
 	shared_mutex m_query_mutex;

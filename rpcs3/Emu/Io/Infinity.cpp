@@ -358,7 +358,7 @@ u32 infinity_base::load_figure(const std::array<u8, 0x14 * 0x10>& buf, fs::file 
 	return number;
 }
 
-usb_device_infinity::usb_device_infinity(const std::array<u8, 7>& location)
+usb_device_infinity_emu::usb_device_infinity_emu(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
 	device = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x200, 0x0, 0x0, 0x0, 0x20, 0x0E6F, 0x0129, 0x200, 0x1, 0x2, 0x3, 0x1});
@@ -369,16 +369,26 @@ usb_device_infinity::usb_device_infinity(const std::array<u8, 7>& location)
 	config0.add_node(UsbDescriptorNode(USB_DESCRIPTOR_ENDPOINT, UsbDeviceEndpoint{0x1, 0x3, 0x20, 0x1}));
 }
 
-usb_device_infinity::~usb_device_infinity()
+usb_device_infinity_emu::~usb_device_infinity_emu()
 {
 }
 
-void usb_device_infinity::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+std::shared_ptr<usb_device> usb_device_infinity_emu::make_instance(u32, const std::array<u8, 7>& location)
+{
+	return std::make_shared<usb_device_infinity_emu>(location);
+}
+
+u16 usb_device_infinity_emu::get_num_emu_devices()
+{
+	return 1;
+}
+
+void usb_device_infinity_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	usb_device_emulated::control_transfer(bmRequestType, bRequest, wValue, wIndex, wLength, buf_size, buf, transfer);
 }
 
-void usb_device_infinity::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
+void usb_device_infinity_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
 {
 	ensure(buf_size == 0x20);
 

@@ -123,7 +123,7 @@ static void guncon3_encode(const GunCon3_data* gc, u8* data, const u8* key)
 			 + data[8] + data[9] - data[10] - data[11]) ^ data[12];
 }
 
-usb_device_guncon3::usb_device_guncon3(u32 controller_index, const std::array<u8, 7>& location)
+usb_device_guncon3_emu::usb_device_guncon3_emu(u32 controller_index, const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 	, m_controller_index(controller_index)
 {
@@ -172,11 +172,11 @@ usb_device_guncon3::usb_device_guncon3(u32 controller_index, const std::array<u8
 			.bInterval        = 0x04}));
 }
 
-usb_device_guncon3::~usb_device_guncon3()
+usb_device_guncon3_emu::~usb_device_guncon3_emu()
 {
 }
 
-void usb_device_guncon3::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+void usb_device_guncon3_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake            = true;
 	transfer->expected_count  = buf_size;
@@ -188,7 +188,7 @@ void usb_device_guncon3::control_transfer(u8 bmRequestType, u8 bRequest, u16 wVa
 
 extern bool is_input_allowed();
 
-void usb_device_guncon3::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
+void usb_device_guncon3_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 	transfer->expected_count = buf_size;

@@ -6,7 +6,7 @@
 
 LOG_CHANNEL(rb3_midi_keyboard_log);
 
-usb_device_rb3_midi_keyboard::usb_device_rb3_midi_keyboard(const std::array<u8, 7>& location, const std::string& device_name)
+usb_device_rb3_midi_keyboard_emu::usb_device_rb3_midi_keyboard_emu(const std::array<u8, 7>& location, const std::string& device_name)
 	: usb_device_emulated(location)
 {
 	device = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x0200, 0x00, 0x00, 0x00, 64, 0x12ba, 0x2338, 0x01, 0x01, 0x02, 0x00, 0x01});
@@ -84,7 +84,7 @@ usb_device_rb3_midi_keyboard::usb_device_rb3_midi_keyboard(const std::array<u8, 
 	rb3_midi_keyboard_log.error("Could not find device with name: %s", device_name);
 }
 
-usb_device_rb3_midi_keyboard::~usb_device_rb3_midi_keyboard()
+usb_device_rb3_midi_keyboard_emu::~usb_device_rb3_midi_keyboard_emu()
 {
 	rtmidi_in_free(midi_in);
 }
@@ -103,7 +103,7 @@ static const std::array<u8, 40> enabled_response = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x21, 0x26, 0x02, 0x06, 0x00, 0x00, 0x00, 0x00};
 
-void usb_device_rb3_midi_keyboard::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+void usb_device_rb3_midi_keyboard_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 
@@ -165,7 +165,7 @@ void usb_device_rb3_midi_keyboard::control_transfer(u8 bmRequestType, u8 bReques
 	}
 }
 
-void usb_device_rb3_midi_keyboard::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
+void usb_device_rb3_midi_keyboard_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 	transfer->expected_count = buf_size;
@@ -213,7 +213,7 @@ void usb_device_rb3_midi_keyboard::interrupt_transfer(u32 buf_size, u8* buf, u32
 	write_state(buf);
 }
 
-void usb_device_rb3_midi_keyboard::parse_midi_message(u8* msg, usz size)
+void usb_device_rb3_midi_keyboard_emu::parse_midi_message(u8* msg, usz size)
 {
 	// this is not emulated correctly but the game doesn't seem to care
 	button_state.count++;
@@ -295,7 +295,7 @@ void usb_device_rb3_midi_keyboard::parse_midi_message(u8* msg, usz size)
 	}
 }
 
-void usb_device_rb3_midi_keyboard::write_state(u8* buf)
+void usb_device_rb3_midi_keyboard_emu::write_state(u8* buf)
 {
 	// buttons
 	buf[0] |= 0b0000'0010 * button_state.cross;

@@ -306,13 +306,13 @@ void set_flag_if_any(u8* buf, std::string_view name, const controller::FlagByInd
 
 }
 
-usb_device_rb3_midi_drums::Definition::Definition(std::string name, const std::string_view csv, const std::function<rb3drums::KitState()> create_state)
+usb_device_rb3_midi_drums_emu::Definition::Definition(std::string name, const std::string_view csv, const std::function<rb3drums::KitState()> create_state)
 	: name{std::move(name)}
 	, notes{midi::combo::parse_combo(this->name, csv)}
 	, create_state{create_state}
 {}
 
-usb_device_rb3_midi_drums::usb_device_rb3_midi_drums(const std::array<u8, 7>& location, const std::string& device_name)
+usb_device_rb3_midi_drums_emu::usb_device_rb3_midi_drums_emu(const std::array<u8, 7>& location, const std::string& device_name)
 	: usb_device_emulated(location)
 {
 	m_id_to_note_mapping = midi::create_id_to_note_mapping();
@@ -409,7 +409,7 @@ usb_device_rb3_midi_drums::usb_device_rb3_midi_drums(const std::array<u8, 7>& lo
 	rb3_midi_drums_log.error("Could not find device with name: %s", device_name);
 }
 
-usb_device_rb3_midi_drums::~usb_device_rb3_midi_drums()
+usb_device_rb3_midi_drums_emu::~usb_device_rb3_midi_drums_emu()
 {
 	rtmidi_in_free(midi_in);
 }
@@ -428,7 +428,7 @@ static const std::array<u8, 40> enabled_response = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x21, 0x26, 0x02, 0x06, 0x00, 0x00, 0x00, 0x00};
 
-void usb_device_rb3_midi_drums::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+void usb_device_rb3_midi_drums_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 
@@ -504,7 +504,7 @@ void usb_device_rb3_midi_drums::control_transfer(u8 bmRequestType, u8 bRequest, 
 	}
 }
 
-void usb_device_rb3_midi_drums::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
+void usb_device_rb3_midi_drums_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 	transfer->expected_count = buf_size;
@@ -609,7 +609,7 @@ void usb_device_rb3_midi_drums::interrupt_transfer(u32 buf_size, u8* buf, u32 /*
 	}
 }
 
-rb3drums::KitState usb_device_rb3_midi_drums::parse_midi_message(u8* msg, usz size)
+rb3drums::KitState usb_device_rb3_midi_drums_emu::parse_midi_message(u8* msg, usz size)
 {
 	if (size < 3)
 	{
@@ -636,13 +636,13 @@ rb3drums::KitState usb_device_rb3_midi_drums::parse_midi_message(u8* msg, usz si
 	return rb3drums::KitState{};
 }
 
-midi::Note usb_device_rb3_midi_drums::id_to_note(midi::Id id)
+midi::Note usb_device_rb3_midi_drums_emu::id_to_note(midi::Id id)
 {
 	const auto it = m_id_to_note_mapping.find(id);
 	return it != m_id_to_note_mapping.cend() ? it->second : midi::Note::Invalid;
 }
 
-rb3drums::KitState usb_device_rb3_midi_drums::parse_midi_note(const u8 id, const u8 velocity)
+rb3drums::KitState usb_device_rb3_midi_drums_emu::parse_midi_note(const u8 id, const u8 velocity)
 {
 	if (velocity < midi::min_velocity())
 	{
@@ -675,7 +675,7 @@ rb3drums::KitState usb_device_rb3_midi_drums::parse_midi_note(const u8 id, const
 	return kit_state;
 }
 
-bool usb_device_rb3_midi_drums::is_midi_cc(const u8 id, const u8 value)
+bool usb_device_rb3_midi_drums_emu::is_midi_cc(const u8 id, const u8 value)
 {
 	if (id != g_cfg_rb3drums.midi_cc_number)
 	{
@@ -709,7 +709,7 @@ bool usb_device_rb3_midi_drums::is_midi_cc(const u8 id, const u8 value)
 	return false;
 }
 
-void usb_device_rb3_midi_drums::write_state(u8* buf, const rb3drums::KitState& kit_state)
+void usb_device_rb3_midi_drums_emu::write_state(u8* buf, const rb3drums::KitState& kit_state)
 {
 	// See: https://github.com/TheNathannator/PlasticBand/blob/main/Docs/Instruments/4-Lane%20Drums/PS3%20and%20Wii.md#input-info
 
@@ -765,7 +765,7 @@ bool rb3drums::KitState::is_drum() const
 	return std::max({snare, hi_tom, low_tom, floor_tom}) >= midi::min_velocity();
 }
 
-void usb_device_rb3_midi_drums::ComboTracker::reload_definitions()
+void usb_device_rb3_midi_drums_emu::ComboTracker::reload_definitions()
 {
 	m_definitions = {
 		{"start",     g_cfg_rb3drums.combo_start.to_string(),            []{ return drum::start_state(); }},
@@ -774,7 +774,7 @@ void usb_device_rb3_midi_drums::ComboTracker::reload_definitions()
 	};
 }
 
-void usb_device_rb3_midi_drums::ComboTracker::add(u8 note)
+void usb_device_rb3_midi_drums_emu::ComboTracker::add(u8 note)
 {
 	if (!midi_notes.empty() && std::chrono::steady_clock::now() >= expiry)
 	{
@@ -807,12 +807,12 @@ void usb_device_rb3_midi_drums::ComboTracker::add(u8 note)
 	}
 }
 
-void usb_device_rb3_midi_drums::ComboTracker::reset()
+void usb_device_rb3_midi_drums_emu::ComboTracker::reset()
 {
 	midi_notes.clear();
 }
 
-std::optional<rb3drums::KitState> usb_device_rb3_midi_drums::ComboTracker::take_state()
+std::optional<rb3drums::KitState> usb_device_rb3_midi_drums_emu::ComboTracker::take_state()
 {
 	if (midi_notes.empty())
 	{

@@ -193,7 +193,7 @@ u8 sky_portal::load_skylander(u8* buf, fs::file in_file)
 	return found_slot;
 }
 
-usb_device_skylander::usb_device_skylander(const std::array<u8, 7>& location)
+usb_device_skylander_emu::usb_device_skylander_emu(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
 	device        = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x0200, 0x00, 0x00, 0x00, 0x40, 0x1430, 0x0150, 0x0100, 0x01, 0x02, 0x00, 0x01});
@@ -204,11 +204,21 @@ usb_device_skylander::usb_device_skylander(const std::array<u8, 7>& location)
 	config0.add_node(UsbDescriptorNode(USB_DESCRIPTOR_ENDPOINT, UsbDeviceEndpoint{0x02, 0x03, 0x40, 0x01}));
 }
 
-usb_device_skylander::~usb_device_skylander()
+usb_device_skylander_emu::~usb_device_skylander_emu()
 {
 }
 
-void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+std::shared_ptr<usb_device> usb_device_skylander_emu::make_instance(u32, const std::array<u8, 7>& location)
+{
+	return std::make_shared<usb_device_skylander_emu>(location);
+}
+
+u16 usb_device_skylander_emu::get_num_emu_devices()
+{
+	return 1;
+}
+
+void usb_device_skylander_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 
@@ -335,14 +345,14 @@ void usb_device_skylander::control_transfer(u8 bmRequestType, u8 bRequest, u16 w
 	}
 }
 
-void usb_device_skylander::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
+void usb_device_skylander_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
 {
 	ensure(buf_size == 0x20);
 
 	transfer->fake            = true;
 	transfer->expected_count  = buf_size;
 	transfer->expected_result = HC_CC_NOERR;
-	
+
 	if (endpoint == 0x02)
 	{
 		// Audio transfers are fairly quick(~1ms)

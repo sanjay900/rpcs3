@@ -4,6 +4,7 @@
 #include "GHLtar.h"
 #include "Emu/Cell/lv2/sys_usbd.h"
 #include "Emu/Io/ghltar_config.h"
+#include "Emu/system_config.h"
 #include "Input/pad_thread.h"
 
 LOG_CHANNEL(ghltar_log, "GHLTAR");
@@ -37,7 +38,7 @@ void fmt_class_string<ghltar_btn>::format(std::string& out, u64 arg)
 	});
 }
 
-usb_device_ghltar::usb_device_ghltar(u32 controller_index, const std::array<u8, 7>& location)
+usb_device_ghltar_emu::usb_device_ghltar_emu(u32 controller_index, const std::array<u8, 7>& location)
 	: usb_device_emulated(location), m_controller_index(controller_index)
 {
 	device        = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x0200, 0x00, 0x00, 0x00, 0x20, 0x12BA, 0x074B, 0x0100, 0x01, 0x02, 0x00, 0x01});
@@ -48,11 +49,21 @@ usb_device_ghltar::usb_device_ghltar(u32 controller_index, const std::array<u8, 
 	config0.add_node(UsbDescriptorNode(USB_DESCRIPTOR_ENDPOINT, UsbDeviceEndpoint{0x01, 0x03, 0x0020, 0x01}));
 }
 
-usb_device_ghltar::~usb_device_ghltar()
+usb_device_ghltar_emu::~usb_device_ghltar_emu()
 {
 }
 
-void usb_device_ghltar::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+std::shared_ptr<usb_device> usb_device_ghltar_emu::make_instance(u32 controller_index, const std::array<u8, 7>& location)
+{
+	return std::make_shared<usb_device_ghltar_emu>(controller_index, location);
+}
+
+u16 usb_device_ghltar_emu::get_num_emu_devices()
+{
+	return static_cast<u16>(g_cfg.io.ghltar.get());
+}
+
+void usb_device_ghltar_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 
@@ -78,7 +89,7 @@ void usb_device_ghltar::control_transfer(u8 bmRequestType, u8 bRequest, u16 wVal
 
 extern bool is_input_allowed();
 
-void usb_device_ghltar::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
+void usb_device_ghltar_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
 {
 	ensure(buf_size >= 27);
 

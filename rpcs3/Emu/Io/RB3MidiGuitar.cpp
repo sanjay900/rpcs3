@@ -6,7 +6,7 @@
 
 LOG_CHANNEL(rb3_midi_guitar_log);
 
-usb_device_rb3_midi_guitar::usb_device_rb3_midi_guitar(const std::array<u8, 7>& location, const std::string& device_name, bool twentytwo_fret)
+usb_device_rb3_midi_guitar_emu::usb_device_rb3_midi_guitar_emu(const std::array<u8, 7>& location, const std::string& device_name, bool twentytwo_fret)
 	: usb_device_emulated(location)
 {
 	// For the 22-fret guitar (Fender Squier), the only thing that's different
@@ -98,7 +98,7 @@ usb_device_rb3_midi_guitar::usb_device_rb3_midi_guitar(const std::array<u8, 7>& 
 	rb3_midi_guitar_log.error("Could not find device with name: %s", device_name);
 }
 
-usb_device_rb3_midi_guitar::~usb_device_rb3_midi_guitar()
+usb_device_rb3_midi_guitar_emu::~usb_device_rb3_midi_guitar_emu()
 {
 	rtmidi_in_free(midi_in);
 }
@@ -117,7 +117,7 @@ static const std::array<u8, 40> enabled_response = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x21, 0x26, 0x02, 0x06, 0x00, 0x00, 0x00, 0x00};
 
-void usb_device_rb3_midi_guitar::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+void usb_device_rb3_midi_guitar_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 
@@ -179,7 +179,7 @@ void usb_device_rb3_midi_guitar::control_transfer(u8 bmRequestType, u8 bRequest,
 	}
 }
 
-void usb_device_rb3_midi_guitar::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
+void usb_device_rb3_midi_guitar_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 /*endpoint*/, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 	transfer->expected_count = buf_size;
@@ -228,7 +228,7 @@ void usb_device_rb3_midi_guitar::interrupt_transfer(u32 buf_size, u8* buf, u32 /
 	write_state(buf);
 }
 
-void usb_device_rb3_midi_guitar::parse_midi_message(u8* msg, usz size)
+void usb_device_rb3_midi_guitar_emu::parse_midi_message(u8* msg, usz size)
 {
 	// this is not emulated correctly but the game doesn't seem to care
 	button_state.count++;
@@ -290,7 +290,7 @@ void usb_device_rb3_midi_guitar::parse_midi_message(u8* msg, usz size)
 	}
 }
 
-void usb_device_rb3_midi_guitar::write_state(u8* buf)
+void usb_device_rb3_midi_guitar_emu::write_state(u8* buf)
 {
 	// encode frets
 	buf[8] |= (button_state.frets[0] & 0b11111) << 2;

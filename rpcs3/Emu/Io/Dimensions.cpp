@@ -558,7 +558,7 @@ std::optional<std::array<u8, 32>> dimensions_toypad::pop_added_removed_response(
 	return response;
 }
 
-usb_device_dimensions::usb_device_dimensions(const std::array<u8, 7>& location)
+usb_device_dimensions_emu::usb_device_dimensions_emu(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
 	device = UsbDescriptorNode(USB_DESCRIPTOR_DEVICE, UsbDeviceDescriptor{0x200, 0x0, 0x0, 0x0, 0x20, 0x0E6F, 0x0241, 0x200, 0x1, 0x2, 0x3, 0x1});
@@ -569,16 +569,26 @@ usb_device_dimensions::usb_device_dimensions(const std::array<u8, 7>& location)
 	config0.add_node(UsbDescriptorNode(USB_DESCRIPTOR_ENDPOINT, UsbDeviceEndpoint{0x01, 0x03, 0x20, 0x1}));
 }
 
-usb_device_dimensions::~usb_device_dimensions()
+usb_device_dimensions_emu::~usb_device_dimensions_emu()
 {
 }
 
-void usb_device_dimensions::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+std::shared_ptr<usb_device> usb_device_dimensions_emu::make_instance(u32, const std::array<u8, 7>& location)
+{
+	return std::make_shared<usb_device_dimensions_emu>(location);
+}
+
+u16 usb_device_dimensions_emu::get_num_emu_devices()
+{
+	return 1;
+}
+
+void usb_device_dimensions_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	usb_device_emulated::control_transfer(bmRequestType, bRequest, wValue, wIndex, wLength, buf_size, buf, transfer);
 }
 
-void usb_device_dimensions::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
+void usb_device_dimensions_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
 {
 	ensure(buf_size == 0x20);
 
@@ -700,7 +710,7 @@ void usb_device_dimensions::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoi
 	}
 }
 
-void usb_device_dimensions::isochronous_transfer(UsbTransfer* transfer)
+void usb_device_dimensions_emu::isochronous_transfer(UsbTransfer* transfer)
 {
 	usb_device_emulated::isochronous_transfer(transfer);
 }

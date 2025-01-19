@@ -3,7 +3,7 @@
 
 LOG_CHANNEL(usb_vfs);
 
-usb_device_vfs::usb_device_vfs(const cfg::device_info& device_info, const std::array<u8, 7>& location)
+usb_device_vfs_emu::usb_device_vfs_emu(const cfg::device_info& device_info, const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
 	const auto [vid, pid] = device_info.get_usb_ids();
@@ -59,6 +59,6 @@ usb_device_vfs::usb_device_vfs(const cfg::device_info& device_info, const std::a
 	strings = {"SMI Corporation", "USB DISK", device_info.serial}; // Manufacturer, Product, SerialNumber
 }
 
-usb_device_vfs::~usb_device_vfs()
+usb_device_vfs_emu::~usb_device_vfs_emu()
 {
 }

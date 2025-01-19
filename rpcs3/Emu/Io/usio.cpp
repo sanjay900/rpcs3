@@ -57,7 +57,7 @@ struct usio_memory
 	static constexpr usz page_count = 0x10;
 };
 
-usb_device_usio::usb_device_usio(const std::array<u8, 7>& location)
+usb_device_usio_emu::usb_device_usio_emu(const std::array<u8, 7>& location)
 	: usb_device_emulated(location)
 {
 	// Initialize dependencies
@@ -122,12 +122,22 @@ usb_device_usio::usb_device_usio(const std::array<u8, 7>& location)
 	load_backup();
 }
 
-usb_device_usio::~usb_device_usio()
+usb_device_usio_emu::~usb_device_usio_emu()
 {
 	save_backup();
 }
 
-void usb_device_usio::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
+std::shared_ptr<usb_device> usb_device_usio_emu::make_instance(u32 controller_index, const std::array<u8, 7>& location)
+{
+	return std::make_shared<usb_device_usio_emu>(location);
+}
+
+u16 usb_device_usio_emu::get_num_emu_devices()
+{
+	return 1;
+}
+
+void usb_device_usio_emu::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue, u16 wIndex, u16 wLength, u32 buf_size, u8* buf, UsbTransfer* transfer)
 {
 	transfer->fake = true;
 
@@ -143,7 +153,7 @@ void usb_device_usio::control_transfer(u8 bmRequestType, u8 bRequest, u16 wValue
 
 extern bool is_input_allowed();
 
-void usb_device_usio::load_backup()
+void usb_device_usio_emu::load_backup()
 {
 	usio_memory& memory = g_fxo->get<usio_memory>();
 	memory.init();
@@ -167,7 +177,7 @@ void usb_device_usio::load_backup()
 	usio_backup_file.read(memory.backup_memory.data(), file_size);
 }
 
-void usb_device_usio::save_backup()
+void usb_device_usio_emu::save_backup()
 {
 	if (!is_used)
 		return;
@@ -186,7 +196,7 @@ void usb_device_usio::save_backup()
 	usio_backup_file.trunc(file_size);
 }
 
-void usb_device_usio::translate_input_taiko()
+void usb_device_usio_emu::translate_input_taiko()
 {
 	std::lock_guard lock(pad::g_pad_mutex);
 	const auto handler = pad::get_current_handler();
@@ -270,7 +280,7 @@ void usb_device_usio::translate_input_taiko()
 	response = std::move(input_buf);
 }
 
-void usb_device_usio::translate_input_tekken()
+void usb_device_usio_emu::translate_input_tekken()
 {
 	std::lock_guard lock(pad::g_pad_mutex);
 	const auto handler = pad::get_current_handler();
@@ -404,7 +414,7 @@ void usb_device_usio::translate_input_tekken()
 	response = std::move(input_buf);
 }
 
-void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
+void usb_device_usio_emu::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 {
 	const auto get_u16 = [&](std::string_view usio_func) -> u16
 	{
@@ -477,7 +487,7 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 	}
 }
 
-void usb_device_usio::usio_read(u8 channel, u16 reg, u16 size)
+void usb_device_usio_emu::usio_read(u8 channel, u16 reg, u16 size)
 {
 	if (channel == 0)
 	{
@@ -553,7 +563,7 @@ void usb_device_usio::usio_read(u8 channel, u16 reg, u16 size)
 	response.resize(size); // Always resize the response vector to the given size
 }
 
-void usb_device_usio::usio_init(u8 channel, u16 reg, u16 size)
+void usb_device_usio_emu::usio_init(u8 channel, u16 reg, u16 size)
 {
 	if (channel == 0)
 	{
@@ -583,7 +593,7 @@ void usb_device_usio::usio_init(u8 channel, u16 reg, u16 size)
 	}
 }
 
-void usb_device_usio::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
+void usb_device_usio_emu::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, UsbTransfer* transfer)
 {
 	constexpr u8 USIO_COMMAND_WRITE = 0x90;
 	constexpr u8 USIO_COMMAND_READ  = 0x10;
