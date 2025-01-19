@@ -325,7 +325,7 @@ static void LIBUSB_CALL log_cb(libusb_context* /*ctx*/, enum libusb_log_level le
 }
 #endif
 
-static uint64_t make_usb_key(uint64_t vendor, uint64_t product, uint64_t port, uint64_t address) {
+static uint64_t make_usb_id(uint64_t vendor, uint64_t product, uint64_t port, uint64_t address) {
 	return vendor << 32 | product << 16 | port << 8 | address;
 }
 
@@ -338,7 +338,7 @@ void usb_handler_thread::check_device_removal(struct libusb_device* dev) {
 	}
 	uint8_t port = libusb_get_port_number(dev);
 	uint8_t address = libusb_get_device_address(dev);
-	uint64_t key = make_usb_key(desc.idVendor, desc.idProduct, port, address);
+	uint64_t usb_id = make_usb_id(desc.idVendor, desc.idProduct, port, address);
 	const auto found = known_passthrough_devices.find(key);
 	if (found != known_passthrough_devices.end())
 	{
@@ -356,7 +356,7 @@ void usb_handler_thread::check_device(struct libusb_device* dev) {
 
 	uint8_t port = libusb_get_port_number(dev);
 	uint8_t address = libusb_get_device_address(dev);
-	uint64_t key = make_usb_key(desc.idVendor, desc.idProduct, port, address);
+	uint64_t usb_id = make_usb_id(desc.idVendor, desc.idProduct, port, address);
 	seen_usb_devices.insert(key);
 	if (known_passthrough_devices.count(key) != 0)
 	{
@@ -376,7 +376,7 @@ void usb_handler_thread::check_device(struct libusb_device* dev) {
 			connect_usb_device(usb_dev, true);
 			uint8_t port = libusb_get_port_number(dev);
 			uint8_t address = libusb_get_device_address(dev);
-			uint64_t key = make_usb_key(desc.idVendor, desc.idProduct, port, address);
+			uint64_t usb_id = make_usb_id(desc.idVendor, desc.idProduct, port, address);
 			known_passthrough_devices[key] = usb_dev;
 		}
 	}
